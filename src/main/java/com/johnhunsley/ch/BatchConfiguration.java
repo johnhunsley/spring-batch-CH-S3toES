@@ -16,6 +16,8 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.listener.JobExecutionListenerSupport;
+import org.springframework.batch.core.scope.context.ChunkContext;
+import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.FlatFileItemWriter;
@@ -23,6 +25,7 @@ import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.file.transform.*;
 import org.springframework.batch.item.support.CompositeItemWriter;
+import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -31,6 +34,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.IllegalFormatException;
 import java.util.Iterator;
@@ -48,6 +52,9 @@ public class BatchConfiguration {
 
     @Value("${s3.bucket.name}")
     private String bucketName;
+
+    @Value("${s3.output.bucket.name}")
+    private String outputBucketName;
 
     @Value("${s3.key.name}")
     private String objectKey;
@@ -159,18 +166,36 @@ public class BatchConfiguration {
         return writer;
     }
 
+    public Tasklet s3Uploader() {
+        return (stepContribution, chunkContext) -> {
+            //bucket name, key, File
+            File tempJson = new File(jsonOutputFilePath);
+            File tempCsv = new File(csvOutputFilePath);
+            amazonS3.putObject(outputBucketName, tempJson.getName(), tempJson);
+            amazonS3.putObject(outputBucketName, tempCsv.getName(), tempCsv);
+            return RepeatStatus.FINISHED;
+        };
+    }
+
 
 
     @Bean
-    public Step step1(ItemWriter writer) {
-        return stepBuilderFactory.get("step1").<Company, Company> chunk(100)
+    public Step createFiles(ItemWriter writer) {
+        return stepBuilderFactory.get("createFiles").<Company, Company> chunk(100)
                 .reader(reader())
                 .writer(writer)
                 .build();
     }
 
     @Bean
-    public Job importFromS3AndWriteJob(Step step1) {
+    public Step uploadOutPut() {
+        return stepBuilderFactory.get("uploadOutPut")
+                .tasklet(s3Uploader())
+                .build();
+    }
+
+    @Bean
+    public Job importFromS3AndWriteJob(Step createFiles, Step uploadOutPut) {
         return jobBuilderFactory.get("importS3Job")
                 .listener(new JobExecutionListenerSupport() {
                     @Override
@@ -180,9 +205,11 @@ public class BatchConfiguration {
                         }
                     }
                 })
-                .flow(step1)
+                .flow(createFiles).next(uploadOutPut)
                 .end()
                 .build();
     }
+
+
 
 }
