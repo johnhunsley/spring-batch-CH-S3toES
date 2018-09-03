@@ -19,6 +19,7 @@ import org.springframework.batch.core.listener.JobExecutionListenerSupport;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.file.FlatFileHeaderCallback;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.FlatFileItemWriter;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
@@ -35,6 +36,8 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.IllegalFormatException;
 import java.util.Iterator;
@@ -163,6 +166,7 @@ public class BatchConfiguration {
         extractor.setNames(new String[] { "companyNumber", "companyName"});
         aggregator.setFieldExtractor(extractor);
         writer.setLineAggregator(aggregator);
+        writer.setHeaderCallback(writer1 -> writer1.write("~id, name:String"));
         return writer;
     }
 
